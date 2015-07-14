@@ -17,7 +17,7 @@
 static int report_levels = 0; // report states at end of every level
 static int report_table = 0; // report table size at end of every level
 static int report_nodes = 0; // report number of nodes of BDDs
-static int strategy = 1; // set to 1 = use PAR strategy; set to 0 = use BFS strategy
+static int strategy = 1; // 0 = BFS, 1 = PAR, 2 = SAT
 static int check_deadlocks = 0; // set to 1 to check for deadlocks
 static int print_transition_matrix = 0; // print transition relation matrix
 static int workers = 0; // autodetect
@@ -181,6 +181,63 @@ VOID_TASK_2(print_example, BDD, example, BDDSET, variables)
         }
         printf("]");
     }
+}
+
+TASK_2(BDD, go_sat, BDD, set, int, idx)
+{
+    if (set == sylvan_false) return sylvan_false;
+    if (idx == next_count) return set;
+
+    BDD result;
+    // cache
+    const BDD s = set;
+    if (cache_get(s | (200LL<<40), idx, 0, &result)) return result;
+
+    // NOTE: the cache "could" be much better by adding each intermediate result too??
+
+    BDDVAR var = sylvan_var(next[idx]->bdd);
+
+    if (set == sylvan_true || var <= sylvan_var(set)) {
+        // count number of relations starting here
+        int count = idx+1;
+        while (count < next_count && var == sylvan_var(next[count]->bdd)) count++;
+        count -= idx;
+        // apply fixpoint
+        BDD prev = sylvan_false;
+        while (prev != set) {
+            prev = set;
+            bdd_refs_push(set);
+            // first recursive
+            if (idx < 16) printf("going in %d\n", idx+count);
+            set = CALL(go_sat, set, idx+count);
+            // apply all relations once
+            // printf("applying %d-%d\n", idx, idx+count-1);
+            for (int i=0;i<count;i++) {
+                bdd_refs_push(set);
+                BDD step = sylvan_relnext(set, next[idx+i]->bdd, next[idx+i]->variables);
+                bdd_refs_push(step);
+                set = sylvan_or(set, step);
+                bdd_refs_pop(2);
+            }
+            bdd_refs_pop(1);
+        }
+        result = set;
+    } else {
+        // recursive
+        bdd_refs_spawn(SPAWN(go_sat, sylvan_low(set), idx));
+        BDD high = bdd_refs_push(CALL(go_sat, sylvan_high(set), idx));
+        BDD low = bdd_refs_sync(SYNC(go_sat));
+        result = sylvan_makenode(sylvan_var(set), low, high);
+    }
+
+    cache_put(s | (200LL<<40), idx, 0, result);
+    return result;
+}
+
+/* Saturation strategy */
+VOID_TASK_1(sat, set_t, set)
+{
+    set->bdd = CALL(go_sat, set->bdd, 0);
 }
 
 /* Straight-forward implementation of parallel reduction */
@@ -404,6 +461,23 @@ VOID_TASK_1(bfs, set_t, set)
     sylvan_unprotect(&deadlocks);
 }
 
+void
+gnomesort_next()
+{
+    int i = 1, j = 2;
+    rel_t t;
+    while (i < next_count) {
+        rel_t *p = &next[i], *q = p-1;
+        if (sylvan_var((*q)->bdd) > sylvan_var((*p)->bdd)) {
+            t = *q;
+            *q = *p;
+            *p = t;
+            if (--i) continue;
+        }
+        i = j++;
+    }
+}
+
 static void
 print_matrix(BDD vars)
 {
@@ -489,6 +563,11 @@ main(int argc, char **argv)
     /* Done */
     fclose(f);
 
+    if (strategy == 2) {
+        // sort the transition relations (gnome sort)
+        gnomesort_next();
+    }
+
     if (print_transition_matrix) {
         for (i=0; i<next_count; i++) {
             INFO("");
@@ -517,6 +596,11 @@ main(int argc, char **argv)
         CALL(par, states);
         double t2 = wctime();
         INFO("PAR Time: %f\n", t2-t1);
+    } else if (strategy == 2) {
+        double t1 = wctime();
+        CALL(sat, states);
+        double t2 = wctime();
+        INFO("SAT Time: %f\n", t2-t1);
     } else {
         double t1 = wctime();
         CALL(bfs, states);
