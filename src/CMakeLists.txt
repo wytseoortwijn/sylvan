@@ -30,6 +30,8 @@ add_library(sylvan
     sylvan_mtbdd_int.h
     sylvan_obj.hpp
     sylvan_obj.cpp
+    sylvan_zdd.h
+    sylvan_zdd.c
     tls.h
 )
 
@@ -70,5 +72,6 @@ install(FILES
     sylvan_ldd.h
     sylvan_mtbdd.h
     sylvan_obj.hpp
+    sylvan_zdd.h
     tls.h
     DESTINATION "include")

@@ -29,6 +29,8 @@ libsylvan_la_SOURCES = \
     sylvan_mtbdd_int.h \
     sylvan_obj.hpp \
     sylvan_obj.cpp \
+    sylvan_zdd.h \
+    sylvan_zdd.c \
     tls.h
 
 libsylvan_la_LIBADD = -lm
