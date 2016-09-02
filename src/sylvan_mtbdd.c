@@ -43,9 +43,18 @@ mtbdd_isleaf(MTBDD bdd)
 
 // for nodes
 uint32_t
-mtbdd_getvar(MTBDD node)
+mtbdd_getlevel(MTBDD node)
 {
     return mtbddnode_getvariable(MTBDD_GETNODE(node));
+}
+
+// for nodes
+uint32_t
+mtbdd_getvar(MTBDD node)
+{
+    uint32_t level = mtbddnode_getvariable(MTBDD_GETNODE(node));
+    if (n_vars) return level_to_var[level];
+    else return level;
 }
 
 MTBDD
@@ -374,6 +383,75 @@ void mtbdd_custom_set_read_binary(uint32_t type, mtbdd_read_binary_cb read_binar
     c->read_binary_cb = read_binary_cb;
 }
 
+
+/**
+ * Handling of variable levels
+ */
+MTBDD *vars = NULL;
+uint32_t *var_to_level = NULL;
+uint32_t *level_to_var = NULL;
+size_t n_vars = 0;
+
+static size_t vars_size = 0;
+
+MTBDD
+mtbdd_newvar()
+{
+    if (n_vars == vars_size) {
+        vars_size*=2;
+        vars = realloc(vars, vars_size*sizeof(MTBDD));
+        var_to_level = realloc(var_to_level, vars_size*sizeof(uint32_t));
+        level_to_var = realloc(level_to_var, vars_size*sizeof(uint32_t));
+    }
+    MTBDD result = vars[n_vars] = mtbdd_makenode(n_vars, mtbdd_false, mtbdd_true);
+    var_to_level[n_vars] = n_vars;
+    level_to_var[n_vars] = n_vars;
+    n_vars++;
+    return result;
+}
+
+MTBDD
+mtbdd_ithlevel(uint32_t level)
+{
+    if (n_vars) {
+        if (level >= n_vars) return mtbdd_invalid;
+        else return vars[level_to_var[level]];
+    } else {
+        return mtbdd_makenode(level, mtbdd_false, mtbdd_true);
+    }
+}
+
+MTBDD
+mtbdd_ithvar(uint32_t var)
+{
+    if (n_vars) {
+        if (var >= n_vars) return mtbdd_invalid;
+        else return vars[var];
+    } else {
+        return mtbdd_makenode(var, mtbdd_false, mtbdd_true);
+    }
+}
+
+uint32_t
+mtbdd_var_to_level(uint32_t var)
+{
+    return var_to_level[var];
+}
+
+uint32_t
+mtbdd_level_to_var(uint32_t level)
+{
+    return level_to_var[level];
+}
+
+VOID_TASK_0(mtbdd_gc_mark_managed_refs)
+{
+    size_t i;
+    for (i=0; i<n_vars; i++) {
+        llmsset_mark(nodes, MTBDD_STRIPMARK(vars[i]));
+    }
+}
+
 /**
  * Initialize and quit functions
  */
@@ -394,6 +472,14 @@ mtbdd_quit()
         cl_registry_count = 0;
     }
 
+    if (vars_size != 0) {
+        free(vars);
+        free(var_to_level);
+        free(level_to_var);
+        n_vars = 0;
+        vars_size = 0;
+    }
+
     mtbdd_initialized = 0;
 }
 
@@ -406,6 +492,7 @@ sylvan_init_mtbdd()
     sylvan_register_quit(mtbdd_quit);
     sylvan_gc_add_mark(TASK(mtbdd_gc_mark_external_refs));
     sylvan_gc_add_mark(TASK(mtbdd_gc_mark_protected));
+    sylvan_gc_add_mark(TASK(mtbdd_gc_mark_managed_refs));
 
     refs_create(&mtbdd_refs, 1024);
     if (!mtbdd_protected_created) {

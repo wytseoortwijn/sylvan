@@ -77,6 +77,7 @@ typedef MTBDD MTBDDMAP;
 #define sylvan_count_protected  mtbdd_count_protected
 #define sylvan_gc_mark_rec      mtbdd_gc_mark_rec
 #define sylvan_notify_ondead    mtbdd_notify_ondead
+#define sylvan_ithvar           mtbdd_ithvar
 #define bdd_refs_push           mtbdd_refs_push
 #define bdd_refs_pop            mtbdd_refs_pop
 #define bdd_refs_spawn          mtbdd_refs_spawn
@@ -106,6 +107,7 @@ typedef MTBDD MTBDDMAP;
 #define sylvan_set_count        mtbdd_set_count
 #define sylvan_test_isset       mtbdd_test_isset
 #define sylvan_var              mtbdd_getvar
+#define sylvan_level            mtbdd_getlevel
 #define sylvan_low              mtbdd_getlow
 #define sylvan_high             mtbdd_gethigh
 #define sylvan_makenode         mtbdd_makenode
@@ -156,15 +158,17 @@ uint32_t mtbdd_gettype(MTBDD terminal);
 uint64_t mtbdd_getvalue(MTBDD terminal);
 
 /**
- * For internal MTBDD nodes, returns <var>, <low> and <high>
+ * For internal MTBDD nodes, returns <var>/<level>, <low> and <high>
  */
 uint32_t mtbdd_getvar(MTBDD node);
+uint32_t mtbdd_getlevel(MTBDD node);
 MTBDD mtbdd_getlow(MTBDD node);
 MTBDD mtbdd_gethigh(MTBDD node);
 
 /**
  * Compute the complement of the MTBDD.
  * For Boolean MTBDDs, this means "not X".
+ * For many non-Boolean MTBDD types, complements are NOT well-defined! Do NOT use unless supported!
  */
 #define mtbdd_hascomp(dd) ((dd & mtbdd_complement) ? 1 : 0)
 #define mtbdd_comp(dd) (dd ^ mtbdd_complement)
@@ -184,6 +188,42 @@ int64_t mtbdd_getint64(MTBDD terminal);
 double mtbdd_getdouble(MTBDD terminal);
 #define mtbdd_getnumer(terminal) ((int32_t)(mtbdd_getvalue(terminal)>>32))
 #define mtbdd_getdenom(terminal) ((uint32_t)(mtbdd_getvalue(terminal)&0xffffffff))
+
+/**
+ * Functions for working with dynamic variable reordering.
+ * The internal value in the MTBDD nodes is called the "level".
+ * The original level (upon creation) is called "var".
+ * Initially, levels are assigned linearly, starting with 0.
+ * If dynamic variable reordering is not used, then var is the same as level.
+ */
+
+/**
+ * Create the next variable and return the BDD representing the variable (ithvar)
+ * Initially, this variable will have the same value for var and for level.
+ * Variable levels are assigned linearly, starting with 0.
+ */
+MTBDD mtbdd_newvar();
+
+/**
+ * Create or get the BDD representing "if <level> then true else false"
+ */
+MTBDD mtbdd_ithlevel(uint32_t level);
+
+/**
+ * Create or get the BDD representing "if <var> then true else false"
+ * If you don't use newvar and dynamic variable ordering, this function behaves like mtbdd_ithlevel.
+ */
+MTBDD mtbdd_ithvar(uint32_t var);
+
+/**
+ * Get the current level of given variable <var>
+ */
+uint32_t mtbdd_var_to_level(uint32_t var);
+
+/**
+ * Get the var of the given level <level>
+ */
+uint32_t mtbdd_level_to_var(uint32_t level);
 
 /**
  * Create the conjunction of variables in arr,

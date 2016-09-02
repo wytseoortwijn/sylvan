@@ -140,6 +140,14 @@ mtbddnode_followhigh(MTBDD mtbdd, mtbddnode_t node)
 }
 
 /**
+ * Handling of variable levels
+ */
+extern MTBDD *vars;
+extern uint32_t *var_to_level;
+extern uint32_t *level_to_var;
+extern size_t n_vars;
+
+/**
  * Compatibility
  */
 
