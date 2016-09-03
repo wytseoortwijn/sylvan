@@ -357,6 +357,93 @@ test_compose()
 }
 
 int
+test_varswap()
+{
+    LACE_ME;
+
+    BDD one, two;
+    BDDMAP map;
+
+    char hash1[65];
+    char hash2[65];
+    char hash3[65];
+    char hash4[65];
+
+    /* test ithvar, switch 6 and 7 */
+    one = sylvan_ithvar(6);
+    two = sylvan_ithvar(7);
+    test_assert(sylvan_varswap(6, 0) == 0);
+    test_assert(one == sylvan_ithvar(7));
+    test_assert(two == sylvan_ithvar(6));
+
+    /* test random, switch 6 and 7 */
+    one = make_random(3, 16);
+    map = sylvan_map_empty();
+    map = sylvan_map_add(map, 6, sylvan_ithvar(7));
+    map = sylvan_map_add(map, 7, sylvan_ithvar(6));
+    two = sylvan_compose(one, map);
+
+    test_assert(sylvan_compose(two, map) == one);
+
+    sylvan_getsha(one, hash1);
+    sylvan_getsha(two, hash2);
+
+    test_assert(sylvan_varswap(6, 0) == 0);
+
+    sylvan_getsha(one, hash3);
+    sylvan_getsha(two, hash4);
+
+    test_assert(strcmp(hash1, hash4) == 0);
+    test_assert(strcmp(hash2, hash3) == 0);
+
+    /* test random, switch 6 and 8 */
+    one = make_random(3, 16);
+    map = sylvan_map_empty();
+    map = sylvan_map_add(map, 6, sylvan_ithvar(8));
+    map = sylvan_map_add(map, 8, sylvan_ithvar(6));
+    two = sylvan_compose(one, map);
+
+    test_assert(sylvan_compose(two, map) == one);
+
+    sylvan_getsha(one, hash1);
+    sylvan_getsha(two, hash2);
+
+    test_assert(sylvan_varswap(6, 0) == 0);
+    test_assert(sylvan_varswap(7, 0) == 0);
+    test_assert(sylvan_varswap(6, 0) == 0);
+
+    sylvan_getsha(one, hash3);
+    sylvan_getsha(two, hash4);
+
+    test_assert(strcmp(hash1, hash4) == 0);
+    test_assert(strcmp(hash2, hash3) == 0);
+
+    /* test bddmap [6 -> 6] becomes [7 -> 7] */
+    map = sylvan_map_add(sylvan_map_empty(), 6, sylvan_ithvar(6));
+    test_assert(sylvan_varswap(6, 0) == 0);
+    test_assert(sylvan_map_key(map) == 7);
+    test_assert(sylvan_map_value(map) == sylvan_ithvar(7));
+
+    /* test bddmap [6 -> 7] becomes [7 -> 6] */
+    map = sylvan_map_add(sylvan_map_empty(), 6, sylvan_ithvar(7));
+    test_assert(sylvan_varswap(6, 0) == 0);
+    test_assert(sylvan_map_key(map) == 7);
+    test_assert(sylvan_map_value(map) == sylvan_ithvar(6));
+
+    /* test bddmap [6 -> 7, 7 -> 8] becomes [6 -> 8, 7 -> 6] */
+    map = sylvan_map_add(sylvan_map_empty(), 6, sylvan_ithvar(7));
+    map = sylvan_map_add(map, 7, sylvan_ithvar(8));
+    test_assert(sylvan_varswap(6, 0) == 0);
+    test_assert(sylvan_map_key(map) == 6);
+    test_assert(sylvan_map_value(map) == sylvan_ithvar(8));
+    map = sylvan_map_next(map);
+    test_assert(sylvan_map_key(map) == 7);
+    test_assert(sylvan_map_value(map) == sylvan_ithvar(6));
+
+    return 0;
+}
+
+int
 test_ldd()
 {
     // very basic testing of makenode
@@ -463,6 +550,7 @@ int runtests()
     for (int j=0;j<10;j++) if (test_relprod()) return 1;
     for (int j=0;j<10;j++) if (test_compose()) return 1;
     for (int j=0;j<10;j++) if (test_operators()) return 1;
+    for (int j=0;j<10;j++) if (test_varswap()) return 1;
 
     if (test_ldd()) return 1;
 

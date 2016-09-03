@@ -29,6 +29,8 @@ add_library(sylvan
     sylvan_obj.cpp
     sylvan_refs.h
     sylvan_refs.c
+    sylvan_reorder.h
+    sylvan_reorder.c
     sylvan_sl.h
     sylvan_sl.c
     sylvan_stats.h
