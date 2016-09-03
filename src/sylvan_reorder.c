@@ -472,3 +472,266 @@ VOID_TASK_3(sylvan_count_nodes, size_t*, arr, size_t, first, size_t, count)
         for (i=0; i<n_vars; i++) __sync_add_and_fetch(&arr[i], tmp[i]);
     }
 }
+
+
+
+/*
+ * simplified version without the documentation and assertions
+ * /
+TASK_IMPL_1(int, sylvan_simple_varswap, uint32_t, var)
+{
+    sylvan_clear_cache();
+    sylvan_clear_and_mark();
+
+    switch (sylvan_varswap(var, 0)) {
+    case 0:
+        return 0;
+    case -1:
+    case -2:
+        if (sylvan_varswap(var, 0) == 0) return 1;
+        break;
+    default:
+        if (sylvan_varswap(var, 1) == -2) {
+            fprintf(stderr, "sylvan: cannot rehash during sifting!\n");
+            exit(1);
+        }
+        break;
+    }
+
+    sylvan_clear_and_mark();
+    sylvan_rehash_all();
+    return 1;
+}
+*/
+
+/**
+ * Now follow (eventually) the "usual" algorithms,
+ * like sifting, window permutation, etc.
+ */
+
+
+
+/**
+ * Sifting in CUDD:
+ * First: obtain number of nodes per variable, then sort.
+ * Then perform sifting until max var, or termination callback, or time limit
+ * Only variables between "lower" and "upper" that are not "bound"
+ *
+ * Sifting a variable between "low" and "high:
+ * go to closest end first.
+ * siftingUp/siftingDown --> siftingBackward
+ *
+ * Parameters
+ * - siftMaxVar - maximum number of vars sifted
+ *     default: 1000
+ * - siftMaxSwap - maximum number of swaps
+ *     default: 2000000
+ * - double maxGrowth - some maximum % growth (from the start of a sift of a part. variable)
+ *     default: 1.2
+ * if a lower size is found, the limitSize is updated...
+ */
+
+/*
+TASK_IMPL_2(int, sylvan_sifting, uint32_t, low, uint32_t, high)
+{
+    // run garbage collection
+    sylvan_clear_cache();
+    sylvan_clear_and_mark();
+
+    // now count all variable levels (parallel...)
+    size_t level_counts[n_vars];
+    for (size_t i=0; i<n_vars; i++) level_counts[i] = 0;
+    CALL(sylvan_count_nodes, level_counts, 0, table_size);
+
+    // only keep variables between low and high (if high != 0)
+
+    // sort levels by count
+
+    // now in a loop from i to max_sift_vars...
+    size_t count = max_sift_vars < nvars ? max_sift_vars : nvars;
+    for (size_t i=0; i<count; i++) {
+        // check terminating condition (number of swaps)
+
+        // set x to next var
+
+        // find closest boundary (bot or top)
+
+        // loop to closest boundary, remember best size and position. (best_size, best_y)
+        // terminate that loop given heuristics
+
+        // loop back to x, then loop to furthest boundary, same story.
+
+        // loop to best y.
+        //
+        //
+        //
+        //
+        //
+        //
+    }
+
+
+    // we already did a clear cache as very first action
+    // we already did clear_and_mark at start...
+}
+*/
+
+
+
+
+
+/**
+ * OLD CODE
+ */
+
+/*
+ * draft code snippet for iterative fixing
+ */
+/*
+    // now the bad case: phase 2 was reached (creating new nodes), but rehashing
+    // failed in phase 1 of the rollback, (likely) because of the new nodes...
+    //
+    // we need to iteratively restore the original nodes
+    // an easier solution would be to increase the node table size...
+    while (1) {
+        sylvan_clear_and_mark();
+        // now some original nodes may no longer be in the table
+        // rehash the unmarked nodes
+        llmsset_clear_hashes(nodes);
+        if (CALL(sylvan_varswap_rehash_var, var+1) != 0) {
+            fprintf(stderr, "sylvan: cannot rehash during sifting!\n");
+            exit(1);
+        }
+
+        if (sylvan_varswap_rehash_unmarked() != 0) {
+            fprintf(stderr, "sylvan: cannot rehash during sifting!\n");
+            exit(1);
+        }
+        // run phase 2 again...
+        res2 = sylvan_varswap_phase2(var);
+        if (res2 == 0) return 1;
+        // may now result in -3, -4, -5
+        if (res2 == -3) {
+            // all original nodes are restored, just rehashing did not work
+            sylvan_clear_and_mark();
+            sylvan_rehash_all(); // this will abort on failure
+            return 1;
+        }
+    }
+}
+*/
+
+
+/**
+ * Helper function that simply rehashes all unmarked nodes.
+ * Part of the recovery after sylvan_varswap reports an error.
+ */
+TASK_DECL_0(int, sylvan_varswap_rehash_unmarked);
+#define sylvan_varswap_rehash_unmarked() CALL(sylvan_varswap_rehash_unmarked)
+
+TASK_2(int, sylvan_varswap_rehash_unmarked_rec, size_t, first, size_t, count)
+{
+    /* if count too high, divide and conquer */
+    if (count > BLOCKSIZE) {
+        SPAWN(sylvan_varswap_rehash_unmarked_rec, first, count/2);
+        int error1 = CALL(sylvan_varswap_rehash_unmarked_rec, first+count/2, count-count/2);
+        int error2 = SYNC(sylvan_varswap_rehash_unmarked_rec);
+        return (error1 || error2) ? 1 : 0;
+    }
+
+    /* skip buckets 0 and 1 */
+    if (first <= 1) {
+        count = count + first - 2;
+        first = 2;
+    }
+
+    mtbddnode_t node = MTBDD_GETNODE(first);
+    const size_t end = first + count;
+
+    int error = 0;
+
+    for (; first < end; node++, first++) {
+        /* skip unused buckets */
+        if (!llmsset_is_marked(nodes, first)) continue;
+        /* if not a leaf and marked, skip */
+        if (!mtbddnode_isleaf(node) && mtbddnode_getmark(node)) continue;
+        /* leaf or unmarked, rehash */
+        if (!llmsset_rehash_bucket(nodes, first)) error = 1;
+    }
+
+    return error;
+}
+
+TASK_IMPL_0(int, sylvan_varswap_rehash_unmarked)
+{
+    return CALL(sylvan_varswap_rehash_unmarked_rec, 0, nodes->table_size);
+}
+
+/**
+ * Helper function that only rehashes variables of a certain variable level
+ */
+TASK_3(int, sylvan_varswap_rehash_var_rec, uint32_t, var, size_t, first, size_t, count)
+{
+    /* if count too high, divide and conquer */
+    if (count > BLOCKSIZE) {
+        SPAWN(sylvan_varswap_rehash_var_rec, var, first, count/2);
+        int error1 = CALL(sylvan_varswap_rehash_var_rec, var, first+count/2, count-count/2);
+        int error2 = SYNC(sylvan_varswap_rehash_var_rec);
+        return (error1 || error2) ? 1 : 0;
+    }
+
+    /* skip buckets 0 and 1 */
+    if (first <= 1) {
+        count = count + first - 2;
+        first = 2;
+    }
+
+    mtbddnode_t node = MTBDD_GETNODE(first);
+    const size_t end = first + count;
+
+    int error = 0;
+
+    for (; first < end; node++, first++) {
+        /* skip unused buckets */
+        if (!llmsset_is_marked(nodes, first)) continue;
+        /* skip leaf */
+        if (mtbddnode_isleaf(node)) continue;
+        /* skip other variables */
+        if (mtbddnode_getvariable(node) != var) continue;
+        /* rehash */
+        if (!llmsset_rehash_bucket(nodes, first)) error = 1;
+    }
+
+    return error;
+}
+
+TASK_1(int, sylvan_varswap_rehash_var, uint32_t, var)
+{
+    return CALL(sylvan_varswap_rehash_var_rec, var, 0, nodes->table_size);
+}
+
+/**
+ * Helper function to perform only phase 2 of variable swapping.
+ * Part of the recovery after sylvan_varswap reports an error.
+ *
+ * Since phase 2 simply involves fixing the marked nodes, you can
+ * call phase 2 repeatedly until all marked nodes are fixed.
+ */
+TASK_DECL_1(int, sylvan_varswap_phase2, uint32_t);
+#define sylvan_varswap_phase2(var) CALL(sylvan_varswap_phase2, var)
+
+/**
+ * Since phase 2 simply involves fixing the marked nodes, you can actually
+ * call phase 2 repeatedly until all marked nodes are fixed.
+ * This is useful for recovery from a failed variable swap. First run
+ * sylvan_varswap again (so phase 1 is executed) and then do phase 2
+ * until success.
+ */
+TASK_IMPL_1(int, sylvan_varswap_phase2, uint32_t, var)
+{
+    int error = CALL(sylvan_varswap_p2, var, 0, nodes->table_size, NULL);
+    if (error) return -2 - error;
+    else return 0;
+}
+
+
