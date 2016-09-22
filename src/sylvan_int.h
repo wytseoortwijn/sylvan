@@ -90,11 +90,15 @@ extern llmsset_t nodes;
 #define CACHE_MTBDD_GREATER             (55LL<<40)
 #define CACHE_MTBDD_EVAL_COMPOSE        (56LL<<40)
 
+// HZDD operations (at most 11 bits!)
+#define CACHE_HZDD_FROM_MTBDD           (1LL<<52)
+
 #ifdef __cplusplus
 }
 #endif /* __cplusplus */
 
 #include <sylvan_mtbdd_int.h>
 #include <sylvan_ldd_int.h>
+#include <sylvan_hzdd_int.h>
 
 #endif

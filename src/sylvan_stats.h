@@ -31,6 +31,8 @@ typedef enum {
     /* Creating nodes */
     BDD_NODES_CREATED,
     BDD_NODES_REUSED,
+    HZDD_NODES_CREATED,
+    HZDD_NODES_REUSED,
     LDD_NODES_CREATED,
     LDD_NODES_REUSED,
 
@@ -68,6 +70,9 @@ typedef enum {
     OPCOUNTER(MTBDD_MINIMUM),
     OPCOUNTER(MTBDD_MAXIMUM),
     OPCOUNTER(MTBDD_EVAL_COMPOSE),
+
+    /* HZDD operations */
+    OPCOUNTER(HZDD_FROM_MTBDD),
 
     /* LDD operations */
     OPCOUNTER(LDD_UNION),
