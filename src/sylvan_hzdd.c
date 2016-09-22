@@ -308,6 +308,10 @@ hzdd_makenode(uint32_t var, HZDD low, HZDD high)
         if (low_tag == (var+1)) {
             /* no nodes are skipped with (k,k) normalization */
             return HZDD_SETTAG(low, var);
+        } else if (low_tag == 0xfffff) {
+            /* special case... */
+            /* no nodes are skipped with (k,k) normalization */
+            return HZDD_SETTAG(low, var);
         } else {
             /* nodes are skipped, so we fix the tree */
             hzddnode_makenode(&n, var+1, low, low);
@@ -396,7 +400,6 @@ TASK_IMPL_2(HZDD, hzdd_from_mtbdd, MTBDD, dd, MTBDD, domain)
     sylvan_stats_count(HZDD_FROM_MTBDD);
 
     /* First (maybe) match domain with dd */
-    uint32_t tag = 0xfffff;
     mtbddnode_t ndd = MTBDD_GETNODE(dd);
     mtbddnode_t ndomain = NULL;
     if (mtbddnode_isleaf(ndd)) {
@@ -409,7 +412,6 @@ TASK_IMPL_2(HZDD, hzdd_from_mtbdd, MTBDD, dd, MTBDD, domain)
         assert(domain != mtbdd_true && domain != mtbdd_false);
         ndomain = MTBDD_GETNODE(domain);
         uint32_t domain_var = mtbddnode_getvariable(ndomain);
-        tag = domain_var;
 
         uint32_t var = mtbddnode_getvariable(ndd);
         while (domain_var != var) {
@@ -446,7 +448,7 @@ TASK_IMPL_2(HZDD, hzdd_from_mtbdd, MTBDD, dd, MTBDD, domain)
         HZDD low = hzdd_refs_push(CALL(hzdd_from_mtbdd, dd_low, next_domain));
         HZDD high = hzdd_refs_sync(SYNC(hzdd_from_mtbdd));
         hzdd_refs_pop(1);
-        result = HZDD_SETTAG(hzdd_makenode(var, low, high), tag);
+        result = HZDD_SETTAG(hzdd_makenode(var, low, high), var);
     }
 
     /* Store in cache */
@@ -496,3 +498,58 @@ hzdd_nodecount_more(const HZDD *hzdds, size_t count)
     return result;
 }
 
+/**
+ * Export to .dot file
+ */
+static inline int tag_to_label(HZDD hzdd)
+{
+    uint32_t tag = HZDD_GETTAG(hzdd);
+    if (tag == 0xfffff) return -1;
+    else return (int)tag;
+}
+
+static void
+hzdd_fprintdot_rec(FILE *out, HZDD hzdd)
+{
+    hzddnode_t n = HZDD_GETNODE(hzdd); // also works for hzdd_false
+    if (hzddnode_getmark(n)) return;
+    hzddnode_setmark(n, 1);
+
+    if (HZDD_GETINDEX(hzdd) == 0) {  // hzdd == hzdd_true || hzdd == hzdd_false
+        fprintf(out, "0 [shape=box, style=filled, label=\"F\"];\n");
+    } else if (hzddnode_isleaf(n)) {
+        fprintf(out, "%" PRIu64 " [shape=box, style=filled, label=\"", HZDD_GETINDEX(hzdd));
+        /* hzdd_fprint_leaf(out, hzdd); */  // TODO
+        fprintf(out, "\"];\n");
+    } else {
+        fprintf(out, "%" PRIu64 " [label=\"%" PRIu32 "\"];\n",
+                HZDD_GETINDEX(hzdd), hzddnode_getvariable(n));
+
+        hzdd_fprintdot_rec(out, hzddnode_getlow(n));
+        hzdd_fprintdot_rec(out, hzddnode_gethigh(n));
+
+        fprintf(out, "%" PRIu64 " -> %" PRIu64 " [style=dashed, label=\" %d\"];\n",
+                HZDD_GETINDEX(hzdd), HZDD_GETINDEX(hzddnode_getlow(n)),
+                tag_to_label(hzddnode_getlow(n)));
+        fprintf(out, "%" PRIu64 " -> %" PRIu64 " [style=solid dir=both arrowtail=%s, label=\" %d\"];\n",
+                HZDD_GETINDEX(hzdd), HZDD_GETINDEX(hzddnode_gethigh(n)),
+                hzddnode_getcomp(n) ? "dot" : "none", tag_to_label(hzddnode_gethigh(n)));
+    }
+}
+
+void
+hzdd_fprintdot(FILE *out, HZDD hzdd)
+{
+    fprintf(out, "digraph \"DD\" {\n");
+    fprintf(out, "graph [dpi = 300];\n");
+    fprintf(out, "center = true;\n");
+    fprintf(out, "edge [dir = forward];\n");
+    fprintf(out, "root [style=invis];\n");
+    fprintf(out, "root -> %" PRIu64 " [style=solid dir=both arrowtail=%s label=\" %d\"];\n",
+            HZDD_GETINDEX(hzdd), HZDD_HASMARK(hzdd) ? "dot" : "none", tag_to_label(hzdd));
+
+    hzdd_fprintdot_rec(out, hzdd);
+    hzdd_unmark_rec(hzdd);
+
+    fprintf(out, "}\n");
+}

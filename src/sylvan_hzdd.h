@@ -110,6 +110,18 @@ hzdd_nodecount(const HZDD dd) {
 }
 
 /**
+ * Write a .dot representation of a given HZDD
+ */
+void hzdd_fprintdot(FILE *out, HZDD mtbdd);
+#define hzdd_printdot(dd, cb) hzdd_fprintdot(stdout, dd)
+
+/**
+ * Write a .dot representation of a given HZDD, but without complement edges.
+ */
+// void hzdd_fprintdot_nc(FILE *out, HZDD mtbdd);
+// #define hzdd_printdot_nc(dd, cb) hzdd_fprintdot_nc(stdout, dd)
+
+/**
  * Garbage collection
  * Sylvan supplies two default methods to handle references to nodes, but the user
  * is encouraged to implement custom handling. Simply add a handler using sylvan_gc_add_mark
