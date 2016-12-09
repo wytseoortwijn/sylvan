@@ -39,11 +39,12 @@ typedef HZDD HZDDMAP;
  * Todo check:
  * Special tag "0xfffff" means empty domain, or full domain 
  * Complement edges: transfer only to low child, not to high child.
+ * Note that this value of "true" is for the "empty" domain
  */
 #define hzdd_complement    ((HZDD)0x8000000000000000LL)
 #define hzdd_emptydomain   ((HZDD)0x000fffff00000000LL)
-#define hzdd_false         ((HZDD)0x000fffff00000000LL)
-#define hzdd_true          (hzdd_false|hzdd_complement)
+#define hzdd_false         ((HZDD)0x0000000000000000LL)
+#define hzdd_true          ((HZDD)0x8000000000000000LL)
 #define hzdd_invalid       ((HZDD)0xffffffffffffffffLL)
 
 /**
@@ -98,6 +99,12 @@ HZDD hzdd_gethigh(HZDD node);
  */
 TASK_DECL_2(HZDD, hzdd_from_mtbdd, MTBDD, MTBDD);
 #define hzdd_from_mtbdd(dd, domain) CALL(hzdd_from_mtbdd, dd, domain)
+
+/**
+ * Compute the and operator for two boolean HZDDs
+ */
+TASK_DECL_2(HZDD, hzdd_and, HZDD, HZDD);
+#define hzdd_and(a, b) CALL(hzdd_and, a, b)
 
 /**
  * Count the number of HZDD nodes and terminals (excluding hzdd_false and hzdd_true) in the given <count> HZDDs

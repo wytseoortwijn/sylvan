@@ -460,6 +460,133 @@ TASK_IMPL_2(HZDD, hzdd_from_mtbdd, MTBDD, dd, MTBDD, domain)
 }
 
 /**
+ * Implementation of the AND operator for Boolean HZDDs
+ * Assumption both parameters interpreted under same domain...
+ */
+TASK_IMPL_2(HZDD, hzdd_and, HZDD, a, HZDD, b)
+{
+    /* Terminal cases */
+    if (a == hzdd_false || b == hzdd_false) {
+        /* Simple case; also hzdd_false has no tag */
+        return hzdd_false;
+    }
+
+    if (a == b) {
+        /* A \and A := A */
+        return a;
+    }
+
+    /* Get infos */
+    uint32_t a_tag = HZDD_GETTAG(a);
+    uint32_t b_tag = HZDD_GETTAG(b);
+    HZDD a_ = HZDD_NOTAG(a);
+    HZDD b_ = HZDD_NOTAG(b);
+
+    /**
+     * From now on, we treat A and B as if they have the tag <tag>.
+     * Because a conjunction with:
+     * A := **0000...
+     * B := ****00...
+     * is equivalent to:
+     * A := **0000...
+     * B := **0000...
+     */
+    uint32_t tag = a_tag < b_tag ? a_tag : b_tag;
+
+    if (a_ == b_) {
+        /* A \and A := A */
+        return HZDD_SETTAG(a_, tag);
+    }
+
+    /**
+     * The above also handled the case where both a and b are True
+     */
+
+    /**
+     * Switch A and B if A > B
+     */
+    if (HZDD_GETINDEX(a_) > HZDD_GETINDEX(b_)) {
+        HZDD t_ = a_;
+        a_ = b_;
+        b_ = t_;
+    }
+
+    /* Maybe run garbage collection */
+    sylvan_gc_test();
+
+    /* TODO cache */
+
+    /**
+     * Maybe A is True... (B cannot be True at this point)
+     * A := ***0000000000
+     * B := ***0000y.....
+     * Then either the result is True if for y[00000..] it is True, or False
+     */
+    if (a_ == hzdd_true) {
+        for (;;) {
+            b = hzdd_getlow(b);
+            b_ = HZDD_NOTAG(b);
+            if (b_ == hzdd_true) return HZDD_SETTAG(hzdd_true, tag);
+            if (b_ == hzdd_false) return hzdd_false;
+        }
+    }
+    
+    /**
+     * At this point, A and B are both not True/False
+     * Get their variables...
+     */
+
+    hzddnode_t a_node = HZDD_GETNODE(a_);
+    hzddnode_t b_node = HZDD_GETNODE(b_);
+    uint32_t a_var = hzddnode_getvariable(a_node);
+    uint32_t b_var = hzddnode_getvariable(b_node);
+
+    HZDD result;
+
+    /**
+     * if A and B do not have the same var...
+     * (we could improve on this, but it is already complex enough...)
+     */
+    if (a_var < b_var) {
+        /**
+         * A := 0000x....
+         * B := 000000y..
+         * result := A0 \and B
+         */
+        result = hzdd_and(hzddnode_getlow(a_node), HZDD_SETTAG(b_, tag));
+    } else if (a_var > b_var) {
+        /**
+         * A := 000000x..
+         * B := 0000y....
+         * result := A \and B0
+         */
+        result = hzdd_and(hzddnode_getlow(b_node), HZDD_SETTAG(a_, tag));
+    } else {
+        /**
+         * A := 0000x....
+         * B := 0000x....
+         */
+        hzdd_refs_spawn(SPAWN(hzdd_and, hzddnode_getlow(a_node), hzddnode_getlow(b_node)));
+        HZDD high = CALL(hzdd_and, hzddnode_gethigh(a_node), hzddnode_gethigh(b_node));
+        hzdd_refs_push(high);
+        HZDD low = hzdd_refs_sync(SYNC(hzdd_and));
+        hzdd_refs_pop(1);
+        result = hzdd_makenode(a_var, low, high);
+        // the result has a certain tag > a_var... 
+        // maybe ... ***00****000x.....
+        //              tvA   r
+        // if the result tag is not a_var, then we have to make another node...
+        // t->(v,r->(x,..),0)
+        uint32_t result_tag = HZDD_GETTAG(result);
+        if (tag != a_var && a_var != result_tag) {
+            result = HZDD_SETTAG(hzdd_makenode(a_var-1, result, hzdd_false), tag);
+        }
+    }
+
+    return result;
+}
+
+/**
  * Helper function for recursive unmarking
  */
 static void
