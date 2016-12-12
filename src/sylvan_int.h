@@ -92,6 +92,7 @@ extern llmsset_t nodes;
 
 // HZDD operations (at most 11 bits!)
 #define CACHE_HZDD_FROM_MTBDD           (1LL<<52)
+#define CACHE_HZDD_BAND                 (2LL<<52)
 
 #ifdef __cplusplus
 }

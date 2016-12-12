@@ -453,6 +453,31 @@ test_ldd()
     return 0;
 }
 
+int
+test_hzdd()
+{
+    LACE_ME;
+
+    HZDD a = hzdd_makenode(4, hzdd_false, hzdd_true | hzdd_emptydomain);
+    test_assert(a == hzdd_ithvar(4));
+
+    HZDD b = hzdd_ithvar(5);
+    test_assert(b == hzdd_from_mtbdd(sylvan_ithvar(5), sylvan_ithvar(5)));
+
+    BDD a_and_b_bdd = sylvan_and(sylvan_ithvar(4), sylvan_ithvar(5));
+    BDD a_and_b_dom = sylvan_and(sylvan_ithvar(4), sylvan_ithvar(5));
+    HZDD a_and_b = hzdd_and(a, b);
+    a_and_b = hzdd_from_mtbdd(a_and_b_bdd, a_and_b_dom);
+
+    FILE *f = fopen("test.dot", "w");
+    hzdd_fprintdot(f, a_and_b);
+    fclose(f);
+
+    test_assert(a_and_b == hzdd_from_mtbdd(a_and_b_bdd, a_and_b_dom));
+
+    return 0;
+}
+
 int runtests()
 {
     // we are not testing garbage collection
@@ -465,6 +490,7 @@ int runtests()
     for (int j=0;j<10;j++) if (test_operators()) return 1;
 
     if (test_ldd()) return 1;
+    if (test_hzdd()) return 1;
 
     return 0;
 }
@@ -480,6 +506,7 @@ int main()
 	sylvan_init_bdd();
     sylvan_init_mtbdd();
     sylvan_init_ldd();
+    sylvan_init_hzdd();
 
     int res = runtests();
 

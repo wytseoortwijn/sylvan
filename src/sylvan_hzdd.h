@@ -37,7 +37,7 @@ typedef HZDD HZDDMAP;
 
 /**
  * Todo check:
- * Special tag "0xfffff" means empty domain, or full domain 
+ * Special tag "0xfffff" means "bottom" for when there are NO (0,k) nodes
  * Complement edges: transfer only to low child, not to high child.
  * Note that this value of "true" is for the "empty" domain
  */
@@ -68,6 +68,11 @@ HZDD hzdd_makeleaf(uint32_t type, uint64_t value);
 HZDD hzdd_makenode(uint32_t var, HZDD low, HZDD high);
 
 /**
+ * ...
+ */
+HZDD hzdd_extendtag(HZDD dd, uint32_t from, uint32_t to);
+
+/**
  * Returns 1 is the HZDD is a terminal, or 0 otherwise.
  */
 int hzdd_isleaf(HZDD hzdd);
@@ -93,6 +98,8 @@ HZDD hzdd_gethigh(HZDD node);
 #define hzdd_hascomp(dd) ((dd & hzdd_complement) ? 1 : 0)
 #define hzdd_comp(dd) (dd ^ hzdd_complement)
 #define hzdd_not(dd) (dd ^ hzdd_complement)
+
+HZDD hzdd_ithvar(uint32_t var);
 
 /**
  * Convert an MTBDD to a HZDD.

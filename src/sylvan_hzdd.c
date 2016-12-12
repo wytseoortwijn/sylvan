@@ -297,30 +297,25 @@ hzdd_makenode(uint32_t var, HZDD low, HZDD high)
     /* Normalization rules */
     
     struct hzddnode n;
-    uint32_t tag;
 
     if (low == high) {
         /* both children are the same (BDD minimization) */
+        /* tag stays the same */
         return low;
     } else if (high == hzdd_false) {
-        /* if high equals False, we skip the node (ZDD minimization) */
+        /* high equals False (ZDD minimization) */
+        /* note that hzdd_false never has a tag */
         uint32_t low_tag = HZDD_GETTAG(low);
         if (low_tag == (var+1)) {
-            /* no nodes are skipped with (k,k) normalization */
-            return HZDD_SETTAG(low, var);
-        } else if (low_tag == 0xfffff) {
-            /* special case... */
-            /* no nodes are skipped with (k,k) normalization */
+            /* no nodes are skipped with (k,k) */
             return HZDD_SETTAG(low, var);
         } else {
-            /* nodes are skipped, so we fix the tree */
+            /* nodes are skipped with (k,k), so we fix the tree */
             hzddnode_makenode(&n, var+1, low, low);
-            tag = var;
         }
     } else {
         /* fine, go ahead */
         hzddnode_makenode(&n, var, low, high);
-        tag = var;
     }
 
     /* if low had a mark, it is moved to the result (normalization of complement edges) */
@@ -347,8 +342,19 @@ hzdd_makenode(uint32_t var, HZDD low, HZDD high)
     if (created) sylvan_stats_count(HZDD_NODES_CREATED);
     else sylvan_stats_count(HZDD_NODES_REUSED);
 
-    result = HZDD_SETTAG(index, tag);
+    result = HZDD_SETTAG(index, var);
     return mark ? result | hzdd_complement : result;
+}
+
+HZDD
+hzdd_extendtag(HZDD dd, uint32_t from, uint32_t to)
+{
+    /* Find if we have (k,k) nodes */
+    uint32_t old_tag = HZDD_GETTAG(dd);
+    /* If there are no (k,k) nodes, simply update the tag */
+    if (from == old_tag) return HZDD_SETTAG(dd, to);
+    /* If there are (k,k) nodes, force a (k,k) node */
+    else return HZDD_SETTAG(hzdd_makenode(from-1, dd, hzdd_false), to);
 }
 
 HZDD
@@ -384,6 +390,12 @@ hzdd_makemapnode(uint32_t var, HZDD low, HZDD high)
     return index;
 }
 
+HZDD
+hzdd_ithvar(uint32_t var)
+{
+    return hzdd_makenode(var, hzdd_false, hzdd_true | hzdd_emptydomain);
+}
+
 /**
  * Convert an MTBDD to a HZDD
  */
@@ -391,7 +403,7 @@ TASK_IMPL_2(HZDD, hzdd_from_mtbdd, MTBDD, dd, MTBDD, domain)
 {
     /* Special treatment for True and False */
     if (dd == mtbdd_false) return hzdd_false;
-    if (dd == mtbdd_true) return hzdd_true;
+    if (dd == mtbdd_true) return hzdd_true | hzdd_emptydomain;
 
     /* Maybe perform garbage collection */
     sylvan_gc_test();
@@ -461,7 +473,7 @@ TASK_IMPL_2(HZDD, hzdd_from_mtbdd, MTBDD, dd, MTBDD, domain)
 
 /**
  * Implementation of the AND operator for Boolean HZDDs
- * Assumption both parameters interpreted under same domain...
+ * We assume that <a> and <b> are interpreted under the same domain
  */
 TASK_IMPL_2(HZDD, hzdd_and, HZDD, a, HZDD, b)
 {
@@ -471,12 +483,7 @@ TASK_IMPL_2(HZDD, hzdd_and, HZDD, a, HZDD, b)
         return hzdd_false;
     }
 
-    if (a == b) {
-        /* A \and A := A */
-        return a;
-    }
-
-    /* Get infos */
+    /* Split into tag and index */
     uint32_t a_tag = HZDD_GETTAG(a);
     uint32_t b_tag = HZDD_GETTAG(b);
     HZDD a_ = HZDD_NOTAG(a);
@@ -484,7 +491,7 @@ TASK_IMPL_2(HZDD, hzdd_and, HZDD, a, HZDD, b)
 
     /**
      * From now on, we treat A and B as if they have the tag <tag>.
-     * Because a conjunction with:
+     * Because a conjunction of:
      * A := **0000...
      * B := ****00...
      * is equivalent to:
@@ -494,7 +501,7 @@ TASK_IMPL_2(HZDD, hzdd_and, HZDD, a, HZDD, b)
     uint32_t tag = a_tag < b_tag ? a_tag : b_tag;
 
     if (a_ == b_) {
-        /* A \and A := A */
+        /* A \and A == A */
         return HZDD_SETTAG(a_, tag);
     }
 
@@ -514,18 +521,25 @@ TASK_IMPL_2(HZDD, hzdd_and, HZDD, a, HZDD, b)
     /* Maybe run garbage collection */
     sylvan_gc_test();
 
-    /* TODO cache */
+    /* Check cache */
+    HZDD result;
+    if (cache_get3(CACHE_HZDD_BAND, a_, b_, tag, &result)) {
+        // sylvan_stats_count(HZDD_BAND_CACHED);
+        return result;
+    }
 
     /**
      * Maybe A is True... (B cannot be True at this point)
      * A := ***0000000000
      * B := ***0000y.....
      * Then either the result is True if for y[00000..] it is True, or False
+     * So we follow B's low edges until we obtain True or False
      */
     if (a_ == hzdd_true) {
         for (;;) {
             b = hzdd_getlow(b);
             b_ = HZDD_NOTAG(b);
+            // TODO: add cache
             if (b_ == hzdd_true) return HZDD_SETTAG(hzdd_true, tag);
             if (b_ == hzdd_false) return hzdd_false;
         }
@@ -533,7 +547,16 @@ TASK_IMPL_2(HZDD, hzdd_and, HZDD, a, HZDD, b)
     
     /**
      * At this point, A and B are both not True/False
-     * Get their variables...
+     * Now we obtain the variables and do a case split
+     */
+
+    /**
+     * AND(a,b) {
+     *   tag = min(a.tag, b.tag)
+     *   if (a.var == b.var) return TAG(tag, NODE(a.var, AND(a.0,b.0), AND(a.1, b.1)))
+     *   if (a.var  < b.var) return TAG(tag, AND(a.0, TAG(a.var, b))
+     *   if (a.var  > b.var) return TAG(tag, AND(b.0, TAG(b.var, a))
+     * }
      */
 
     hzddnode_t a_node = HZDD_GETNODE(a_);
@@ -541,30 +564,27 @@ TASK_IMPL_2(HZDD, hzdd_and, HZDD, a, HZDD, b)
     uint32_t a_var = hzddnode_getvariable(a_node);
     uint32_t b_var = hzddnode_getvariable(b_node);
 
-    HZDD result;
-
-    /**
-     * if A and B do not have the same var...
-     * (we could improve on this, but it is already complex enough...)
-     */
     if (a_var < b_var) {
         /**
          * A := 0000x....
          * B := 000000y..
          * result := A0 \and B
+         * or:
+         * result := 0000[A0 \and 00y..]
          */
-        result = hzdd_and(hzddnode_getlow(a_node), HZDD_SETTAG(b_, tag));
+        result = HZDD_SETTAG(hzdd_and(hzddnode_getlow(a_node), HZDD_SETTAG(b_, a_var)), tag);
     } else if (a_var > b_var) {
         /**
          * A := 000000x..
          * B := 0000y....
-         * result := A \and B0
+         * result := 0000[00x.. \and B0]
          */
-        result = hzdd_and(hzddnode_getlow(b_node), HZDD_SETTAG(a_, tag));
+        result = HZDD_SETTAG(hzdd_and(hzddnode_getlow(b_node), HZDD_SETTAG(a_, b_var)), tag);
     } else {
         /**
          * A := 0000x....
          * B := 0000x....
+         * result := 0000[x, [A0 \and B0], [A1 \and B1]]
          */
         hzdd_refs_spawn(SPAWN(hzdd_and, hzddnode_getlow(a_node), hzddnode_getlow(b_node)));
         HZDD high = CALL(hzdd_and, hzddnode_gethigh(a_node), hzddnode_gethigh(b_node));
@@ -572,16 +592,10 @@ TASK_IMPL_2(HZDD, hzdd_and, HZDD, a, HZDD, b)
         HZDD low = hzdd_refs_sync(SYNC(hzdd_and));
         hzdd_refs_pop(1);
         result = hzdd_makenode(a_var, low, high);
-        // the result has a certain tag > a_var... 
-        // maybe ... ***00****000x.....
-        //              tvA   r
-        // if the result tag is not a_var, then we have to make another node...
-        // t->(v,r->(x,..),0)
-        uint32_t result_tag = HZDD_GETTAG(result);
-        if (tag != a_var && a_var != result_tag) {
-            result = HZDD_SETTAG(hzdd_makenode(a_var-1, result, hzdd_false), tag);
-        }
+        result = hzdd_extendtag(result, a_var, tag);
     }
+
+    // TODO: cache
 
     return result;
 }
