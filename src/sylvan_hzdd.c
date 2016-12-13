@@ -299,15 +299,26 @@ hzdd_makenode(uint32_t var, HZDD low, HZDD high)
     struct hzddnode n;
 
     if (low == high) {
-        /* both children are the same (BDD minimization) */
-        /* tag stays the same */
+        /**
+         * same children (BDD minimization)
+         * If both are False nodes, just return False.
+         * Maybe they have * tag (all BDD minimization), just return with *.
+         * Maybe they have X tag (BDD all before X), just return with X.
+         */
         return low;
     } else if (high == hzdd_false) {
-        /* high equals False (ZDD minimization) */
+        /**
+         * high equals False (ZDD minimization)
+         * low != False (because low != high)
+         * if tag is var+1 (next in domain) just update tag to var
+         * if tag is * (all BDD minimization) 
+         */
         /* note that hzdd_false never has a tag */
         uint32_t low_tag = HZDD_GETTAG(low);
         if (low_tag == (var+1)) {
             /* no nodes are skipped with (k,k) */
+            return HZDD_SETTAG(low, var);
+        } else if (low == hzdd_true) {
             return HZDD_SETTAG(low, var);
         } else {
             /* nodes are skipped with (k,k), so we fix the tree */

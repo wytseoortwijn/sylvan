@@ -458,6 +458,15 @@ test_hzdd()
 {
     LACE_ME;
 
+    BDD dd;
+    // create a BDD domain 0,1,2,3,4
+    const BDD dom = mtbdd_fromarray((uint32_t[]){0,1,2,3,4}, 5);
+
+    dd = mtbdd_cube(dom, (uint8_t[]){0,0,0,0,0}, mtbdd_true);
+    FILE *ff = fopen("test2.dot", "w");
+    hzdd_fprintdot(ff, hzdd_from_mtbdd(dd, dom));
+    fclose(ff);
+
     HZDD a = hzdd_makenode(4, hzdd_false, hzdd_true | hzdd_emptydomain);
     test_assert(a == hzdd_ithvar(4));
 

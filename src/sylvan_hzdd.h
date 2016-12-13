@@ -28,6 +28,19 @@ extern "C" {
 #endif /* __cplusplus */
 
 /**
+ * Hybrid ZDDs, combining ZDD and BDD minimisation rules.
+ *
+ * Each edge to a node has a tag. Tag 0xfffff is magical "*".
+ * The edge to False always has tag *.
+ * The edge to a terminal for an empty domain also has tag *.
+ *
+ * Edges to nodes and terminals are interpreted under a given domain.
+ * - tag X means all variables from X to the node/terminal use the ZDD rule
+ *           and all variables before X use the BDD rule
+ * - tag * means all variables use the BDD rule
+ */
+
+/**
  * An HZDD is a 64-bit value. The low 40 bits are an index into the unique table.
  * The highest 1 bit is the complement edge, indicating negation.
  * For Boolean HZDDs, this means "not X", for Integer and Real HZDDs, this means "-X".
@@ -43,8 +56,8 @@ typedef HZDD HZDDMAP;
  */
 #define hzdd_complement    ((HZDD)0x8000000000000000LL)
 #define hzdd_emptydomain   ((HZDD)0x000fffff00000000LL)
-#define hzdd_false         ((HZDD)0x0000000000000000LL)
-#define hzdd_true          ((HZDD)0x8000000000000000LL)
+#define hzdd_false         ((HZDD)0x000fffff00000000LL)
+#define hzdd_true          ((HZDD)0x800fffff00000000LL)
 #define hzdd_invalid       ((HZDD)0xffffffffffffffffLL)
 
 /**
