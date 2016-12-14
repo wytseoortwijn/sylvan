@@ -78,7 +78,7 @@ HZDD hzdd_makeleaf(uint32_t type, uint64_t value);
  * <var> is a 24-bit integer.
  * Please note that this does NOT check variable ordering!
  */
-HZDD hzdd_makenode(uint32_t var, HZDD low, HZDD high);
+HZDD hzdd_makenode(uint32_t var, HZDD low, HZDD high, uint32_t nextvar);
 
 /**
  * ...

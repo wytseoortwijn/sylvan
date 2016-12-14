@@ -292,7 +292,7 @@ hzdd_makeleaf(uint32_t type, uint64_t value)
 }
 
 HZDD
-hzdd_makenode(uint32_t var, HZDD low, HZDD high)
+hzdd_makenode(uint32_t var, HZDD low, HZDD high, uint32_t nextvar)
 {
     /* Normalization rules */
     
@@ -310,20 +310,15 @@ hzdd_makenode(uint32_t var, HZDD low, HZDD high)
         /**
          * high equals False (ZDD minimization)
          * low != False (because low != high)
-         * if tag is var+1 (next in domain) just update tag to var
+         * if tag is next in domain just update tag to var
          * if tag is * (all BDD minimization) 
          */
-        /* note that hzdd_false never has a tag */
-        uint32_t low_tag = HZDD_GETTAG(low);
-        if (low_tag == (var+1)) {
-            /* no nodes are skipped with (k,k) */
-            return HZDD_SETTAG(low, var);
-        } else if (low == hzdd_true) {
-            return HZDD_SETTAG(low, var);
-        } else {
-            /* nodes are skipped with (k,k), so we fix the tree */
-            hzddnode_makenode(&n, var+1, low, low);
-        }
+        /* check if no next var; then low must be a terminal */
+        if (nextvar == 0xFFFFF) return HZDD_SETTAG(low, var);
+        /* check if next var is skipped with ZDD rule */
+        if (nextvar == HZDD_GETTAG(low)) return HZDD_SETTAG(low, var);
+        /* nodes are skipped with (k,k), so we must make the next node */
+        hzddnode_makenode(&n, nextvar, low, low);
     } else {
         /* fine, go ahead */
         hzddnode_makenode(&n, var, low, high);
