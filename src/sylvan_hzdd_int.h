@@ -61,7 +61,7 @@ typedef struct __attribute__((packed)) hzddnode {
 #define HZDD_GETNODE(hzdd)           ((hzddnode_t)llmsset_index_to_ptr(nodes, HZDD_GETINDEX(hzdd)))
 #define HZDD_GETTAG(hzdd)            ((hzdd & 0x000fffff00000000)>>32)
 #define HZDD_SETTAG(hzdd, tag)       ((hzdd & 0xfff00000ffffffff) | ((uint64_t)tag << 32))
-#define HZDD_NOTAG(hzdd)             ((hzdd & 0xfff00000ffffffff))
+#define HZDD_NOTAG(hzdd)             ((hzdd | 0x000fffff00000000))
 #define HZDD_HASMARK(s)              (s&hzdd_complement?1:0)
 #define HZDD_TOGGLEMARK(s)           (s^hzdd_complement)
 #define HZDD_STRIPMARK(s)            (s&~hzdd_complement)

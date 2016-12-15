@@ -103,14 +103,16 @@ uint64_t hzdd_getvalue(HZDD terminal);
 uint32_t hzdd_getvar(HZDD node);
 HZDD hzdd_getlow(HZDD node);
 HZDD hzdd_gethigh(HZDD node);
+HZDD hzdd_eval(HZDD dd, uint32_t variable, int value);
 
 /**
  * Compute the complement of the HZDD.
  * For Boolean HZDDs, this means "not X".
  */
-#define hzdd_hascomp(dd) ((dd & hzdd_complement) ? 1 : 0)
-#define hzdd_comp(dd) (dd ^ hzdd_complement)
-#define hzdd_not(dd) (dd ^ hzdd_complement)
+// #define hzdd_hascomp(dd) ((dd & hzdd_complement) ? 1 : 0)
+// #define hzdd_comp(dd) (dd ^ hzdd_complement)
+// #define hzdd_not(dd) (dd ^ hzdd_complement)
+// TODO: create proper hzdd_not
 
 HZDD hzdd_ithvar(uint32_t var);
 

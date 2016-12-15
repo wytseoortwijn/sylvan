@@ -458,16 +458,40 @@ test_hzdd()
 {
     LACE_ME;
 
-    BDD dd;
-    // create a BDD domain 0,1,2,3,4
-    const BDD dom = mtbdd_fromarray((uint32_t[]){0,1,2,3,4}, 5);
+    BDD dom = mtbdd_fromarray((uint32_t[]){0,1,2,3,4,5,6}, 7);
+    BDD dd = mtbdd_cube(dom, (uint8_t[]){0,0,2,2,0,2,0}, mtbdd_true);
+    HZDD hzdd = hzdd_from_mtbdd(dd, dom);
 
-    dd = mtbdd_cube(dom, (uint8_t[]){0,0,0,0,0}, mtbdd_true);
-    FILE *ff = fopen("test2.dot", "w");
-    hzdd_fprintdot(ff, hzdd_from_mtbdd(dd, dom));
-    fclose(ff);
+    /**
+     * We should now have:
+     * Edge tagged 0 to node X
+     * Node X with variable 2 and two edges tagged 4 to node Y
+     * Node Y with variable 5 and two edges tagged 6, high to False, low to True
+     */
 
-    HZDD a = hzdd_makenode(4, hzdd_false, hzdd_true | hzdd_emptydomain);
+    /**
+     * We just test if it evaluates correctly.
+     */
+
+    test_assert(hzdd_eval(hzdd, 0, 1) == hzdd_false);
+    test_assert(hzdd_eval(hzdd, 0, 0) != hzdd_false);
+    hzdd = hzdd_eval(hzdd, 0, 0);
+    test_assert(hzdd_eval(hzdd, 1, 1) == hzdd_false);
+    test_assert(hzdd_eval(hzdd, 1, 0) != hzdd_false);
+    hzdd = hzdd_eval(hzdd, 1, 0);
+    test_assert(hzdd_eval(hzdd, 2, 1) == hzdd_eval(hzdd, 2, 0));
+    hzdd = hzdd_eval(hzdd, 2, 0);
+    test_assert(hzdd_eval(hzdd, 3, 1) == hzdd_eval(hzdd, 3, 0));
+    hzdd = hzdd_eval(hzdd, 3, 1);
+    test_assert(hzdd_eval(hzdd, 4, 1) == hzdd_false);
+    test_assert(hzdd_eval(hzdd, 4, 0) != hzdd_false);
+    hzdd = hzdd_eval(hzdd, 4, 0);
+    test_assert(hzdd_eval(hzdd, 5, 1) == hzdd_eval(hzdd, 5, 0));
+    hzdd = hzdd_eval(hzdd, 5, 0);
+    test_assert(hzdd_eval(hzdd, 6, 1) == hzdd_false);
+    test_assert(hzdd_eval(hzdd, 6, 0) != hzdd_false);
+
+    HZDD a = hzdd_makenode(4, hzdd_false, hzdd_true, 0xfffff);
     test_assert(a == hzdd_ithvar(4));
 
     HZDD b = hzdd_ithvar(5);

@@ -30,12 +30,15 @@
 
 #include <sylvan_refs.h>
 
-/* Primitives */
+/**
+ * Primitives
+ */
+
 int
-hzdd_isleaf(HZDD bdd)
+hzdd_isleaf(HZDD dd)
 {
-    if (bdd == hzdd_true || bdd == hzdd_false) return 1;
-    return hzddnode_isleaf(HZDD_GETNODE(bdd));
+    if (HZDD_GETINDEX(dd) == 0) return 1;
+    return hzddnode_isleaf(HZDD_GETNODE(dd));
 }
 
 uint32_t
@@ -69,10 +72,29 @@ hzdd_getvalue(HZDD leaf)
 }
 
 /**
+ * Evaluate HZDD;
+ * note that the it does not update tags...
+ */
+HZDD
+hzdd_eval(HZDD dd, uint32_t variable, int value)
+{
+    uint32_t tag = HZDD_GETTAG(dd);
+    if (variable < tag) return dd;
+    if (hzdd_isleaf(dd)) return value ? hzdd_false : dd;
+    hzddnode_t n = HZDD_GETNODE(dd);
+    uint32_t var = hzddnode_getvariable(n);
+    if (variable < var) return value ? hzdd_false : dd;
+    assert(variable <= var);
+    return value ? hzddnode_high(dd, n) : hzddnode_low(dd, n);
+}
+
+/**
  * Implementation of garbage collection
  */
 
-/* Recursively mark MDD nodes as 'in use' */
+/**
+ * Recursively mark MDD nodes as 'in use'
+ */
 VOID_TASK_IMPL_1(hzdd_gc_mark_rec, MDD, hzdd)
 {
     if (hzdd == hzdd_true) return;
@@ -291,19 +313,22 @@ hzdd_makeleaf(uint32_t type, uint64_t value)
     return (HZDD)HZDD_SETTAG(index, 0xfffff);
 }
 
+/**
+ * Node creation primitive.
+ *
+ * Returns the HZDD representing the formula <var> then <high> else <low>.
+ * Variable <nextvar> is the next variable in the domain, necessary to correctly
+ * perform the ZDD minimization rule.
+ */
 HZDD
 hzdd_makenode(uint32_t var, HZDD low, HZDD high, uint32_t nextvar)
 {
-    /* Normalization rules */
-    
     struct hzddnode n;
 
     if (low == high) {
         /**
-         * same children (BDD minimization)
-         * If both are False nodes, just return False.
-         * Maybe they have * tag (all BDD minimization), just return with *.
-         * Maybe they have X tag (BDD all before X), just return with X.
+         * Same children (BDD minimization)
+         * Just return one of them, this is correct in all cases.
          */
         return low;
     } else if (high == hzdd_false) {
@@ -320,14 +345,15 @@ hzdd_makenode(uint32_t var, HZDD low, HZDD high, uint32_t nextvar)
         /* nodes are skipped with (k,k), so we must make the next node */
         hzddnode_makenode(&n, nextvar, low, low);
     } else {
-        /* fine, go ahead */
+        /**
+         * No minimization rule.
+         */
         hzddnode_makenode(&n, var, low, high);
     }
 
-    /* if low had a mark, it is moved to the result (normalization of complement edges) */
+    /* if low had a mark, it is moved to the result */
     int mark = HZDD_HASMARK(low);
 
-    HZDD result;
     int created;
     uint64_t index = llmsset_lookup(nodes, n.a, n.b, &created);
     if (index == 0) {
@@ -348,7 +374,7 @@ hzdd_makenode(uint32_t var, HZDD low, HZDD high, uint32_t nextvar)
     if (created) sylvan_stats_count(HZDD_NODES_CREATED);
     else sylvan_stats_count(HZDD_NODES_REUSED);
 
-    result = HZDD_SETTAG(index, var);
+    HZDD result = HZDD_SETTAG(index, var);
     return mark ? result | hzdd_complement : result;
 }
 
@@ -360,7 +386,7 @@ hzdd_extendtag(HZDD dd, uint32_t from, uint32_t to)
     /* If there are no (k,k) nodes, simply update the tag */
     if (from == old_tag) return HZDD_SETTAG(dd, to);
     /* If there are (k,k) nodes, force a (k,k) node */
-    else return HZDD_SETTAG(hzdd_makenode(from-1, dd, hzdd_false), to);
+    else return HZDD_SETTAG(hzdd_makenode(from-1, dd, hzdd_false, from), to);
 }
 
 HZDD
@@ -399,7 +425,7 @@ hzdd_makemapnode(uint32_t var, HZDD low, HZDD high)
 HZDD
 hzdd_ithvar(uint32_t var)
 {
-    return hzdd_makenode(var, hzdd_false, hzdd_true | hzdd_emptydomain);
+    return hzdd_makenode(var, hzdd_false, hzdd_true, 0xfffff);
 }
 
 /**
@@ -409,7 +435,7 @@ TASK_IMPL_2(HZDD, hzdd_from_mtbdd, MTBDD, dd, MTBDD, domain)
 {
     /* Special treatment for True and False */
     if (dd == mtbdd_false) return hzdd_false;
-    if (dd == mtbdd_true) return hzdd_true | hzdd_emptydomain;
+    if (dd == mtbdd_true) return hzdd_true;
 
     /* Maybe perform garbage collection */
     sylvan_gc_test();
@@ -424,9 +450,6 @@ TASK_IMPL_2(HZDD, hzdd_from_mtbdd, MTBDD, dd, MTBDD, domain)
         domain = mtbdd_true;
     } else {
         /* Get variable and cofactors */
-        if (domain == mtbdd_true) {
-            printf("hello houston we are a problem: %zx, %zx", dd, domain);
-        }
         assert(domain != mtbdd_true && domain != mtbdd_false);
         ndomain = MTBDD_GETNODE(domain);
         uint32_t domain_var = mtbddnode_getvariable(ndomain);
@@ -466,7 +489,8 @@ TASK_IMPL_2(HZDD, hzdd_from_mtbdd, MTBDD, dd, MTBDD, domain)
         HZDD low = hzdd_refs_push(CALL(hzdd_from_mtbdd, dd_low, next_domain));
         HZDD high = hzdd_refs_sync(SYNC(hzdd_from_mtbdd));
         hzdd_refs_pop(1);
-        result = HZDD_SETTAG(hzdd_makenode(var, low, high), var);
+        uint32_t next_domain_var = next_domain != mtbdd_true ? mtbdd_getvar(next_domain) : 0xfffff;
+        result = HZDD_SETTAG(hzdd_makenode(var, low, high, next_domain_var), var);
     }
 
     /* Store in cache */
@@ -496,7 +520,7 @@ TASK_IMPL_2(HZDD, hzdd_and, HZDD, a, HZDD, b)
     HZDD b_ = HZDD_NOTAG(b);
 
     /**
-     * From now on, we treat A and B as if they have the tag <tag>.
+     * From now on, we treat A and B as if they have the tag min(A.tag, B.tag)
      * Because a conjunction of:
      * A := **0000...
      * B := ****00...
@@ -512,11 +536,12 @@ TASK_IMPL_2(HZDD, hzdd_and, HZDD, a, HZDD, b)
     }
 
     /**
-     * The above also handled the case where both a and b are True
+     * The above also handled the case where both A and B are True
+     * Therefore in the following, A and B are internal nodes.
      */
 
     /**
-     * Switch A and B if A > B
+     * Switch A and B if A > B (for cache)
      */
     if (HZDD_GETINDEX(a_) > HZDD_GETINDEX(b_)) {
         HZDD t_ = a_;
@@ -526,6 +551,7 @@ TASK_IMPL_2(HZDD, hzdd_and, HZDD, a, HZDD, b)
 
     /* Maybe run garbage collection */
     sylvan_gc_test();
+    // sylvan_stats_count(HZDD_BAND);
 
     /* Check cache */
     HZDD result;
@@ -578,14 +604,18 @@ TASK_IMPL_2(HZDD, hzdd_and, HZDD, a, HZDD, b)
          * or:
          * result := 0000[A0 \and 00y..]
          */
-        result = HZDD_SETTAG(hzdd_and(hzddnode_getlow(a_node), HZDD_SETTAG(b_, a_var)), tag);
+        result = hzdd_and(hzddnode_getlow(a_node), HZDD_SETTAG(b_, a_var));
+        // Trick to add 0000
+        result = hzdd_makenode(tag, result, hzdd_false, a_var);
     } else if (a_var > b_var) {
         /**
          * A := 000000x..
          * B := 0000y....
          * result := 0000[00x.. \and B0]
          */
-        result = HZDD_SETTAG(hzdd_and(hzddnode_getlow(b_node), HZDD_SETTAG(a_, b_var)), tag);
+        result = hzdd_and(hzddnode_getlow(b_node), HZDD_SETTAG(a_, b_var));
+        // Add 0000
+        result = hzdd_makenode(tag, result, hzdd_false, b_var);
     } else {
         /**
          * A := 0000x....
@@ -597,8 +627,9 @@ TASK_IMPL_2(HZDD, hzdd_and, HZDD, a, HZDD, b)
         hzdd_refs_push(high);
         HZDD low = hzdd_refs_sync(SYNC(hzdd_and));
         hzdd_refs_pop(1);
-        result = hzdd_makenode(a_var, low, high);
+        result = hzdd_makenode(a_var, low, high, 0xfffff); //TODO FIXME
         result = hzdd_extendtag(result, a_var, tag);
+        //TODO extendtag --> makenode
     }
 
     // TODO: cache
